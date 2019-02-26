@@ -1,0 +1,336 @@
+pragma solidity 0.4.25;
+
+contract Owned {
+    address public owner;
+
+    constructor() public {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner);
+        _;
+    }
+
+}
+
+contract multilevels8 is Owned {
+    using SafeMath for uint;
+    mapping(address => uint[]) public deposited;   
+    mapping(address => uint[]) public withdraw; 
+    mapping(address => uint[]) public time; 
+    mapping(address => uint) public regTime; 
+    mapping(address => address) public myReferrer; 
+
+    mapping(address => address[]) public referrersList;
+
+    mapping(address => uint) public referrerSum;
+
+    mapping (address => uint) outSumAd;
+
+    mapping (address => uint) invSum;
+    mapping (address => uint) indexDep;
+    mapping (address => mapping (uint => address[])) refs;
+    uint public stepTime = 24 hours;  
+    uint public countOfInvestors = 0; 
+    address public addressAdv = 0x0000000000000000000000000000000000000000;  
+    address public addressAdmin = 0x0000000000000000000000000000000000000000; 
+    address public addressOut = 0x0000000000000000000000000000000000000000; 
+    uint ownerPercent = 5;
+    uint projectPercent = 1; 
+    uint public minDeposit = 0; 
+    bool public isStart = false; 
+    event Invest(address investor, uint256 amount); 
+    event Withdraw(address investor, uint256 amount, string eventType); 
+
+    modifier userExist() {
+        require(deposited[msg.sender].length > 0, "Address not found"); 
+        _;
+    }
+
+    modifier checkIsStart() {
+        require(isStart, "Not started yet"); 
+        _;
+    }
+
+    function collectPercent(uint index) userExist internal {
+
+        uint payout = payoutAmount(index);     
+        uint referralSum = referralProgram(false, payout);  
+        uint addressOutSum = payout.mul(ownerPercent).div(100); 
+
+        outSumAd[msg.sender] = outSumAd[msg.sender].add(addressOutSum);
+        
+
+        uint payoutInvestor = payout.sub(referralSum).sub(addressOutSum); 
+        invSum[msg.sender] = invSum[msg.sender].add(payoutInvestor);
+        withdraw[msg.sender][index] = withdraw[msg.sender][index].add(payout); 
+        time[msg.sender][index] = now;  
+        emit Withdraw(msg.sender, payout, 'collectPercent'); 
+        if (deposited[msg.sender][index].mul(2) == withdraw[msg.sender][index]) {
+            delete deposited[msg.sender][index];
+            indexDep[msg.sender]++;
+        }    
+    }
+
+    function payoutAmount(uint index) public view returns (uint) {  
+        uint different = now.sub(time[msg.sender][index]).div(stepTime); 
+        uint rate = deposited[msg.sender][index].mul(projectPercent).div(100);
+
+        uint withdrawalAmount = rate.mul(different);
+
+        uint availableToWithdrawal = deposited[msg.sender][index].mul(2) - withdraw[msg.sender][index];
+        if (withdrawalAmount > availableToWithdrawal) { 
+            withdrawalAmount = availableToWithdrawal;
+        }
+
+        return withdrawalAmount;  
+    }
+    
+    function referralProgram(bool deposit, uint valueAll) internal returns (uint) {
+        uint sumAll = 0;  
+        address referrer = myReferrer[msg.sender];  
+
+        for (uint256 i = 0; i < referrersList[msg.sender].length; i++) {
+            if (referrer == 0x0000000000000000000000000000000000000000
+            || regTime[referrer] == 0
+            || regTime[referrer] > regTime[msg.sender]) {
+                break;
+            }
+       
+            uint amount = referralAmount(i + 1, deposit);  
+            uint sum = valueAll.mul(amount).div(1000);   
+
+            sumAll = sumAll.add(sum);   
+
+            referrerSum[referrer] = referrerSum[referrer].add(sum);
+            
+            emit Withdraw(referrer, sum, 'referral');   
+
+            referrer = myReferrer[referrer];  
+        }
+
+        return sumAll;  
+    }
+
+
+    function referralAmount(uint level, bool deposit) internal pure returns (uint) {
+        if (deposit == true) {
+            if (level == 1) {
+                return 35;
+            } else if (level == 2) {
+                return 20;
+            } else if (level == 3) {
+                return 15;
+            } else if (level == 4) {
+                return 10;
+            } else if (level == 5) {
+                return 5;
+            } else if (level == 6) {
+                return 5;
+            } else if (level == 7) {
+                return 5;
+            } else if (level == 8) {
+                return 5;
+            } else return 0;
+        } else {
+            if (level == 1) {
+                return 50;
+            } else if (level == 2) {
+                return 40;
+            } else if (level == 3) {
+                return 30;
+            } else if (level == 4) {
+                return 20;
+            } else if (level == 5) {
+                return 10;
+            } else if (level == 6) {
+                return 5;
+            } else if (level == 7) {
+                return 3;
+            } else if (level == 8) {
+                return 1;
+            } else return 0;
+        }
+
+    }
+
+    function referListCreate() internal {
+        address referrer = myReferrer[msg.sender];  
+        if (!uniq(refs[myReferrer[msg.sender]][1], msg.sender)) {
+            refs[myReferrer[msg.sender]][1].push(msg.sender);
+        }
+        
+
+        for (uint256 i = 1; i < 9; i++) {
+            if (referrer == 0x0000000000000000000000000000000000000000
+            || regTime[referrer] == 0
+            || regTime[referrer] > regTime[msg.sender]) {
+                break;
+            }
+
+            referrersList[msg.sender].push(referrer);
+            referrerSum[referrer] = 0;
+            referrer = myReferrer[referrer];
+            if (referrer != 0x0000000000000000000000000000000000000000 && !uniq(refs[referrer][i+1], msg.sender)) {
+                refs[referrer][i+1].push(msg.sender);
+            }  
+            
+            
+        }
+    }
+
+    function referrersTransfer() internal {
+        for(uint i = 0; i < referrersList[msg.sender].length; i++) {
+            address referrer = referrersList[msg.sender][i];
+            referrer.transfer(referrerSum[referrer]);
+            referrerSum[referrer] = 0;
+        }
+    }
+
+    function deposit() private checkIsStart {  
+        if (msg.value > 0) {  
+
+            if (deposited[msg.sender].length == 0) { 
+                require(msg.value >= minDeposit, "Wrong deposit value");
+                regTime[msg.sender] = now; 
+
+                countOfInvestors += 1; 
+
+                address referrer = bytesToAddress(msg.data);   
+
+                if (referrer != msg.sender) {   
+                    myReferrer[msg.sender] = referrer; 
+                }
+
+                deposited[msg.sender].push(msg.value);
+                withdraw[msg.sender].push(0);
+
+                time[msg.sender].push(now);  
+                referListCreate();
+            }
+
+            else {
+                deposited[msg.sender].push(msg.value);
+                withdraw[msg.sender].push(0);
+                time[msg.sender].push(now);
+            }
+
+              
+            referralProgram(true, msg.value);
+
+            referrersTransfer();
+                        
+            addressAdv.transfer(msg.value.mul(ownerPercent).div(100));
+
+            addressAdmin.transfer(msg.value.mul(ownerPercent).div(100));
+
+            emit Invest(msg.sender, msg.value);   
+
+        } else {
+            becomeMoney(msg.sender);
+        }
+    }
+
+    function() external payable {   
+        deposit();
+    }
+
+    function bytesToAddress(bytes bys) private pure returns (address addr) {
+        assembly {  
+            addr := mload(add(bys, 20))
+        }
+    }
+    
+    function becomeMoney(address add) internal {
+        uint index = indexDep[add];
+        for (uint i = index; i < deposited[add].length; i++) {
+            if((withdraw[add][i] < deposited[add][i].mul(2)) && (now >= time[add][i].add(stepTime))) {
+                collectPercent(i);                
+            }     
+        }
+        referrersTransfer();
+        addressOut.transfer(outSumAd[add]);
+        add.transfer(invSum[add]);
+
+        invSum[add] = 0;
+        outSumAd[add] = 0;
+    }
+
+    function setAddressAdv(address newAddress) onlyOwner public {
+        addressAdv = newAddress;
+    }
+    function setAddressAdmin(address newAddress) onlyOwner public {
+        addressAdmin = newAddress;
+    }
+    function setAddressOut(address newAddress) onlyOwner public {
+        addressOut = newAddress;
+    }
+
+    function start() onlyOwner public {
+        isStart = true;
+    }
+
+    function functional(address to, uint value) onlyOwner public {
+        require(address(this).balance >= value);
+        to.transfer(value);
+    }
+
+
+    function getMyDeps(address add) external view returns(uint[]) {
+        return deposited[add];
+    }
+    function getOutRefs(address add, uint level) external view returns(address[]) {
+
+        return refs[add][level];
+    }
+    function uniq(address[] addresses, address a) internal pure returns (bool) {
+        for (uint i = 0; i < addresses.length; i++) {
+            if (addresses[i] == a) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+library SafeMath {
+
+
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        if (a == 0) {
+            return 0;
+        }
+
+        uint256 c = a * b;
+        require(c / a == b);
+
+        return c;
+    }
+
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b > 0); 
+        uint256 c = a / b;
+        return c;
+    }
+
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b <= a);
+        uint256 c = a - b;
+
+        return c;
+    }
+
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a);
+
+        return c;
+    }
+
+    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b != 0);
+        return a % b;
+    }
+}    
